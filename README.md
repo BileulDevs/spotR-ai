@@ -1,2 +1,2 @@
-# SpotR-notifs
-Micro Service Notifs SpotR
+# SpotR-ai
+Micro Service AI SpotR
