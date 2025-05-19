@@ -6,7 +6,7 @@ const logger = winston.createLogger({
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         winston.format.json()
     ),
-    defaultMeta: { service: 'bdd-service' },
+    defaultMeta: { service: 'ai-service' },
     transports: [
         new winston.transports.File({ filename: './storage/warnings.log', level: 'warn' }),
         new winston.transports.File({ filename: './storage/errors.log', level: 'error' }),
