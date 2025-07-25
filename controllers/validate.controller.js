@@ -41,14 +41,16 @@ exports.validatePost = async (req, res) => {
     }));
 
     // Construction du prompt pour OpenAI
-    const prompt = `
+const prompt = `
 Tu es un assistant expert en automobile et en détection de contenu inapproprié.
-Voici un formulaire de création d’annonce de voiture d'occasion à valider. Tu dois :
+Tu dois évaluer la fiabilité d'une annonce de voiture d'occasion selon les critères suivants :
 
-1. Vérifier si la marque et le modèle sont réels et cohérents.
-2. Analyser la description pour détecter tout contenu déplacé, insultant ou inapproprié.
-3. Valider les tags s’ils sont pertinents et non offensants.
-4. Vérifier les images : Dis-moi si elles montrent une voiture cohérente avec la marque/modèle et description, et si les images sont identiques ou non.
+1. Vérifie si la marque et le modèle sont réels et cohérents.
+2. Analyse la description pour détecter tout contenu déplacé, insultant ou inapproprié.
+3. Valide les tags s’ils sont pertinents et non offensants.
+4. Analyse les images : Dis-moi si elles montrent une voiture cohérente avec la marque, le modèle et la description, et si elles sont différentes (pas de doublons ou d’incohérences).
+
+Tu dois produire une évaluation globale de l'annonce sous forme d'un indice d'acceptabilité (de 0 à 100). Si l'indice est supérieur ou égal à 80, l'annonce est considérée comme valide.
 
 Formulaire :
 {
@@ -58,24 +60,28 @@ Formulaire :
   "tags": ${JSON.stringify(tags)}
 }
 
-Images (base64, JPEG):
+Images (base64, JPEG) :
 ${uploadedImages.map((img, i) => `[Image ${i + 1}]: data:image/jpeg;base64,${img.base64.slice(0, 50)}...`).join('\n')}
 
-Tu dois répondre uniquement avec un JSON comme :
-- Si tout est OK :
+Ta réponse doit être uniquement un JSON au format :
+- Si le score est >= 80 :
   {
     "success": true,
-    "info": "Formulaire valide. Les images correspondent à la voiture décrite."
+    "acceptabilityScore": 85, // par exemple
+    "info": "Formulaire globalement valide. Quelques imprécisions mineures, mais acceptables."
   }
-- Sinon, donne les détails du problème :
+
+- Si le score est < 80 :
   {
     "success": false,
+    "acceptabilityScore": 65, // par exemple
     "errors": [
-      "La marque 'Xxx' n'existe pas.",
-      "La description contient un langage inapproprié.",
-      "Les images ne montrent pas la même voiture."
+      "La marque 'Xxx' semble inconnue.",
+      "Une image ne correspond pas à la voiture décrite."
     ]
   }
+
+Sois rigoureux mais tolérant : si tu n’es pas certain à 100% mais que l’ensemble semble cohérent, accorde un score élevé.
 `;
 
     const messages = [
