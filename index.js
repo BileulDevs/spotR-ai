@@ -2,14 +2,29 @@ const express = require('express');
 const cors = require('cors');
 const router = require("./routes/index");
 const logger = require("./config/logger.js");
-const multer = require('multer');
-const fs = require('fs');
-const { OpenAI } = require('openai');
 require('dotenv').config();
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 
-const upload = multer({ dest: 'uploads/' });
+const swaggerDefinition = {
+  openapi: '3.0.0',
+  info: {
+    title: 'API IA',
+    version: '1.0.0',
+    description: 'API Micro Service IA'
+  }
+};
+
+const options = {
+  swaggerDefinition,
+  apis: ['./routes/*.js']
+};
+
+const swaggerSpec = swaggerJsdoc(options);
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 const init = async () => {
     try {
