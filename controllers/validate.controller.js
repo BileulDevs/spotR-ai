@@ -27,12 +27,10 @@ exports.validatePost = async (req, res) => {
     !images ||
     images.length < 1
   ) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        error: 'Champs requis manquants ou images non fournies.',
-      });
+    return res.status(400).json({
+      success: false,
+      error: 'Champs requis manquants ou images non fournies.',
+    });
   }
 
   try {
@@ -205,22 +203,19 @@ Voici le body d'une requete à valider. Tu dois :
 
 Vérifier que le contenu du body est correct (pas de jeu de mots, contenu déplacé, insultant ou inapproprié)
 
-Voici le body : ${req.body}
+Voici le body : ${JSON.stringify(req.body)}
 
-Tu dois répondre uniquement avec un JSON comme :
-- Si tout est OK :
-  {
-    "success": true,
-    "info": "Validation des données OK"
-  }
+IMPORTANT: Tu dois répondre UNIQUEMENT avec un objet JSON valide, sans aucun texte supplémentaire, sans blocs de code markdown, sans backticks.
 
-- Sinon, donne les détails du problème, pour chaque champ invalide, rajoute le dans "errors" avec le détail, en remplacant champ par le champ qui contient l'erreur et raison par la raison de l'erreur :
-  {
-    "success": false,
-    "errors": [
-      "champ: 'raison'",
-    ]
-  }
+Réponds uniquement avec l'un de ces formats JSON exacts :
+
+Pour un contenu approprié :
+{"success": true}
+
+Pour un contenu inapproprié :
+{"success": false}
+
+Aucun autre format n'est accepté.
 `;
 
     const messages = [
@@ -234,30 +229,68 @@ Tu dois répondre uniquement avec un JSON comme :
     const gptResponse = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages,
-      max_tokens: 1200,
+      max_tokens: 50,
+      temperature: 0,
     });
 
-    const result = gptResponse.choices[0].message.content;
+    const result = gptResponse.choices[0].message.content.trim();
     let parsed;
 
     try {
-      parsed = JSON.parse(result);
-    } catch {
-      const jsonMatch = result.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('Réponse GPT invalide');
-      }
+      // Fonction pour nettoyer et extraire le JSON
+      const extractAndParseJSON = (text) => {
+        let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+        cleaned = cleaned.replace(/`/g, '');
+
+        cleaned = cleaned.trim();
+
+        try {
+          return JSON.parse(cleaned);
+        } catch {
+          const jsonMatch = cleaned.match(/\{[^}]*\}/);
+          if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+          }
+
+          if (
+            cleaned.toLowerCase().includes('success') &&
+            cleaned.toLowerCase().includes('true')
+          ) {
+            return { success: true };
+          } else if (
+            cleaned.toLowerCase().includes('success') &&
+            cleaned.toLowerCase().includes('false')
+          ) {
+            return { success: false };
+          }
+
+          throw new Error('Aucun JSON valide trouvé');
+        }
+      };
+
+      parsed = extractAndParseJSON(result);
+    } catch (parseError) {
+      logger.error('Erreur de parsing GPT:', parseError);
+      logger.error('Réponse GPT brute:', result);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Erreur de validation - réponse GPT invalide',
+        details: parseError.message,
+      });
     }
 
     if (!parsed.success) {
-      return res.status(400).json(parsed);
+      return res.status(200).json({
+        success: false,
+        error: 'Contenu inapproprié détecté',
+      });
     }
 
     return res.status(200).json({
       success: true,
-      info: parsed.info || 'Données validées',
+      message: 'Données validées avec succès',
     });
   } catch (err) {
     logger.error('Erreur dans validateData:', err);
