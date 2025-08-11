@@ -2,7 +2,7 @@ const express = require('express');
 const validateController = require('../controllers/validate.controller');
 const multer = require('multer');
 const router = express.Router();
-const emailVerified = require("../middlewares/email-verified");
+const emailVerified = require('../middlewares/email-verified');
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -33,7 +33,12 @@ const upload = multer({ dest: 'uploads/' });
  *       400:
  *         description: Erreur de validation
  */
-router.post('/validatePost', emailVerified, upload.array('image'), validateController.validatePost);
+router.post(
+  '/validatePost',
+  emailVerified,
+  upload.array('image'),
+  validateController.validatePost
+);
 
 /**
  * @swagger

@@ -1,5 +1,8 @@
 const fs = require('fs');
-const { validatePost, validateData } = require('../controllers/validate.controller');
+const {
+  validatePost,
+  validateData,
+} = require('../controllers/validate.controller');
 const logger = require('../config/logger');
 const cloudinary = require('../config/cloudinary');
 const { OpenAI } = require('openai');
@@ -19,12 +22,12 @@ describe('ValidationController', () => {
     brand: 'Toyota',
     model: 'Corolla',
     description: 'Voiture en excellent état',
-    tags: ['berline', 'fiable']
+    tags: ['berline', 'fiable'],
   };
 
   const mockFiles = [
     { originalname: 'car1.jpg', path: '/tmp/upload1.jpg' },
-    { originalname: 'car2.jpg', path: '/tmp/upload2.jpg' }
+    { originalname: 'car2.jpg', path: '/tmp/upload2.jpg' },
   ];
 
   beforeEach(() => {
@@ -36,7 +39,7 @@ describe('ValidationController', () => {
     req = {
       body: {},
       files: [],
-      headers: { authorization: 'Bearer token' }
+      headers: { authorization: 'Bearer token' },
     };
 
     res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -57,26 +60,31 @@ describe('ValidationController', () => {
 
   const mockGPT = (response) =>
     mockOpenAI.chat.completions.create.mockResolvedValue({
-      choices: [{ message: { content: JSON.stringify(response) } }]
+      choices: [{ message: { content: JSON.stringify(response) } }],
     });
 
   describe('validatePost', () => {
     beforeEach(() => {
       req.body = { ...validPostData };
       req.files = [...mockFiles];
-      cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'http://img.com/img.jpg' });
-      global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: 1, ...validPostData }) });
+      cloudinary.uploader.upload.mockResolvedValue({
+        secure_url: 'http://img.com/img.jpg',
+      });
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 1, ...validPostData }),
+      });
     });
 
-    describe('Validation des données d\'entrée', () => {
-      ['brand', 'model', 'description', 'tags'].forEach(field => {
+    describe("Validation des données d'entrée", () => {
+      ['brand', 'model', 'description', 'tags'].forEach((field) => {
         it(`rejette si ${field} est manquant`, async () => {
           delete req.body[field];
           await validatePost(req, res);
           expect(res.status).toHaveBeenCalledWith(400);
           expect(res.json).toHaveBeenCalledWith({
             success: false,
-            error: "Champs requis manquants ou images non fournies."
+            error: 'Champs requis manquants ou images non fournies.',
           });
         });
       });
@@ -87,7 +95,7 @@ describe('ValidationController', () => {
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
-          error: "Champs requis manquants ou images non fournies."
+          error: 'Champs requis manquants ou images non fournies.',
         });
       });
 
@@ -134,22 +142,27 @@ describe('ValidationController', () => {
         mockGPT({ success: true, acceptabilityScore: 85 });
         await validatePost(req, res);
         expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(2);
-        expect(cloudinary.uploader.upload).toHaveBeenCalledWith('/tmp/upload1.jpg', {
-          folder: "posts",
-          use_filename: true,
-          unique_filename: false,
-          resource_type: "image"
-        });
+        expect(cloudinary.uploader.upload).toHaveBeenCalledWith(
+          '/tmp/upload1.jpg',
+          {
+            folder: 'posts',
+            use_filename: true,
+            unique_filename: false,
+            resource_type: 'image',
+          }
+        );
       });
 
       it('gère les erreurs Cloudinary', async () => {
-        cloudinary.uploader.upload.mockRejectedValue(new Error('Cloudinary upload failed'));
+        cloudinary.uploader.upload.mockRejectedValue(
+          new Error('Cloudinary upload failed')
+        );
         await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
-          error: "Erreur serveur",
-          message: "Cloudinary upload failed"
+          error: 'Erreur serveur',
+          message: 'Cloudinary upload failed',
         });
       });
     });
@@ -162,40 +175,56 @@ describe('ValidationController', () => {
         expect(res.json).toHaveBeenCalledWith({
           success: true,
           info: 'Post valide',
-          post: { id: 1, ...validPostData }
+          post: { id: 1, ...validPostData },
         });
       });
 
       it('rejette un post invalide via GPT', async () => {
-        mockGPT({ success: false, acceptabilityScore: 50, errors: ['Marque inconnue'] });
+        mockGPT({
+          success: false,
+          acceptabilityScore: 50,
+          errors: ['Marque inconnue'],
+        });
         await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
           acceptabilityScore: 50,
-          errors: ['Marque inconnue']
+          errors: ['Marque inconnue'],
         });
       });
 
       it('gère une erreur GPT', async () => {
-        mockOpenAI.chat.completions.create.mockRejectedValue(new Error('GPT API Error'));
+        mockOpenAI.chat.completions.create.mockRejectedValue(
+          new Error('GPT API Error')
+        );
         await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(500);
-        expect(logger.error).toHaveBeenCalledWith('Erreur dans validatePost:', expect.any(Error));
+        expect(logger.error).toHaveBeenCalledWith(
+          'Erreur dans validatePost:',
+          expect.any(Error)
+        );
       });
 
       it('gère une réponse GPT complètement invalide', async () => {
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{ message: { content: 'Réponse non JSON invalide' } }]
+          choices: [{ message: { content: 'Réponse non JSON invalide' } }],
         });
         await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(500);
       });
 
       it('parse une réponse GPT avec regex quand JSON.parse échoue', async () => {
-        const jsonContent = '{"success": true, "acceptabilityScore": 85, "info": "ok"}';
+        const jsonContent =
+          '{"success": true, "acceptabilityScore": 85, "info": "ok"}';
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{ message: { content: `Voici la réponse: ${jsonContent} avec du texte après` } }]
+          choices: [
+            {
+              message: {
+                content: `Voici la réponse: ${jsonContent} avec du texte après`,
+              },
+            },
+          ],
         });
         await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(201);
@@ -203,7 +232,7 @@ describe('ValidationController', () => {
 
       it('gère le cas où la réponse GPT ne contient aucun JSON valide', async () => {
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{ message: { content: 'Aucun JSON ici du tout' } }]
+          choices: [{ message: { content: 'Aucun JSON ici du tout' } }],
         });
         await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(500);
@@ -214,34 +243,34 @@ describe('ValidationController', () => {
       it('sauvegarde en BDD après validation réussie', async () => {
         mockGPT({ success: true, acceptabilityScore: 85, info: 'ok' });
         await validatePost(req, res);
-        
+
         expect(global.fetch).toHaveBeenCalledWith(
           `${process.env.SERVICE_BDD_URL}/api/posts`,
           expect.objectContaining({
-            method: "POST",
+            method: 'POST',
             headers: {
-              "Content-Type": "application/json",
-              "Authorization": req.headers.authorization
-            }
+              'Content-Type': 'application/json',
+              Authorization: req.headers.authorization,
+            },
           })
         );
         expect(res.status).toHaveBeenCalledWith(201);
       });
 
       it('gère les erreurs de base de données', async () => {
-        global.fetch.mockResolvedValue({ 
-          ok: false, 
-          json: () => Promise.resolve({ error: 'Database error' }) 
+        global.fetch.mockResolvedValue({
+          ok: false,
+          json: () => Promise.resolve({ error: 'Database error' }),
         });
         mockGPT({ success: true, acceptabilityScore: 85 });
-        
+
         await validatePost(req, res);
-        
+
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
           error: "Validation réussie mais échec de l'enregistrement",
-          details: { error: 'Database error' }
+          details: { error: 'Database error' },
         });
       });
     });
@@ -255,8 +284,10 @@ describe('ValidationController', () => {
         expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/upload2.jpg');
       });
 
-      it('supprime les fichiers temporaires même en cas d\'erreur GPT', async () => {
-        mockOpenAI.chat.completions.create.mockRejectedValue(new Error('GPT Error'));
+      it("supprime les fichiers temporaires même en cas d'erreur GPT", async () => {
+        mockOpenAI.chat.completions.create.mockRejectedValue(
+          new Error('GPT Error')
+        );
         await validatePost(req, res);
         expect(fs.unlinkSync).toHaveBeenCalledTimes(2);
       });
@@ -266,10 +297,13 @@ describe('ValidationController', () => {
           throw new Error('Permission denied');
         });
         mockGPT({ success: true, acceptabilityScore: 85 });
-        
+
         await validatePost(req, res);
-        
-        expect(logger.warn).toHaveBeenCalledWith('Erreur suppression fichier:', expect.any(Error));
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Erreur suppression fichier:',
+          expect.any(Error)
+        );
         expect(res.status).toHaveBeenCalledWith(201);
       });
 
@@ -282,20 +316,24 @@ describe('ValidationController', () => {
   });
 
   describe('validateData', () => {
-    const validData = { username: 'testuser', email: 'test@example.com', message: 'Hello world' };
+    const validData = {
+      username: 'testuser',
+      email: 'test@example.com',
+      message: 'Hello world',
+    };
 
     beforeEach(() => {
       req.body = { ...validData };
     });
 
-    describe('Validation des données d\'entrée', () => {
+    describe("Validation des données d'entrée", () => {
       it('rejette si body est null', async () => {
         req.body = null;
         await validateData(req, res);
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
-          error: "Aucune donnée fournie."
+          error: 'Aucune donnée fournie.',
         });
       });
 
@@ -310,50 +348,55 @@ describe('ValidationController', () => {
       it('valide des données correctes', async () => {
         mockGPT({ success: true, info: 'Validation des données OK' });
         await validateData(req, res);
-        
+
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith({
           success: true,
-          info: 'Validation des données OK'
+          info: 'Validation des données OK',
         });
       });
 
       it('rejette des données invalides', async () => {
-        mockGPT({ 
-          success: false, 
-          errors: ['username: contenu inapproprié', 'email: format invalide'] 
+        mockGPT({
+          success: false,
+          errors: ['username: contenu inapproprié', 'email: format invalide'],
         });
         await validateData(req, res);
-        
+
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
-          errors: ['username: contenu inapproprié', 'email: format invalide']
+          errors: ['username: contenu inapproprié', 'email: format invalide'],
         });
       });
 
       it('utilise un message par défaut si info manque', async () => {
         mockGPT({ success: true });
         await validateData(req, res);
-        
+
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith({
           success: true,
-          info: 'Données validées'
+          info: 'Données validées',
         });
       });
 
       it('gère les erreurs GPT', async () => {
-        mockOpenAI.chat.completions.create.mockRejectedValue(new Error('GPT API Error'));
+        mockOpenAI.chat.completions.create.mockRejectedValue(
+          new Error('GPT API Error')
+        );
         await validateData(req, res);
-        
+
         expect(res.status).toHaveBeenCalledWith(500);
-        expect(logger.error).toHaveBeenCalledWith('Erreur dans validateData:', expect.any(Error));
+        expect(logger.error).toHaveBeenCalledWith(
+          'Erreur dans validateData:',
+          expect.any(Error)
+        );
       });
 
       it('gère une réponse GPT complètement invalide', async () => {
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{ message: { content: 'Réponse non JSON invalide' } }]
+          choices: [{ message: { content: 'Réponse non JSON invalide' } }],
         });
         await validateData(req, res);
         expect(res.status).toHaveBeenCalledWith(500);
@@ -362,20 +405,20 @@ describe('ValidationController', () => {
       it('parse une réponse GPT avec regex quand JSON.parse échoue', async () => {
         const jsonContent = '{"success": true, "info": "Données validées"}';
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{ message: { content: `Préfixe ${jsonContent} suffixe` } }]
+          choices: [{ message: { content: `Préfixe ${jsonContent} suffixe` } }],
         });
         await validateData(req, res);
-        
+
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith({
           success: true,
-          info: 'Données validées'
+          info: 'Données validées',
         });
       });
 
       it('gère le cas où la réponse GPT ne contient aucun JSON', async () => {
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{ message: { content: 'Aucun JSON ici' } }]
+          choices: [{ message: { content: 'Aucun JSON ici' } }],
         });
         await validateData(req, res);
         expect(res.status).toHaveBeenCalledWith(500);
@@ -386,18 +429,18 @@ describe('ValidationController', () => {
       it('affiche le username dans la console', async () => {
         req.body.username = 'testuser';
         mockGPT({ success: true, info: 'ok' });
-        
+
         await validateData(req, res);
-        
+
         expect(consoleSpy).toHaveBeenCalledWith('testuser');
       });
 
       it('gère le cas où username est undefined', async () => {
         req.body = { email: 'test@example.com', message: 'Hello' };
         mockGPT({ success: true, info: 'ok' });
-        
+
         await validateData(req, res);
-        
+
         expect(consoleSpy).toHaveBeenCalledWith(undefined);
       });
     });
@@ -409,19 +452,22 @@ describe('ValidationController', () => {
         brand: 'Tesla',
         model: 'Model 3',
         description: 'Voiture électrique',
-        tags: 'électrique,écologique'
+        tags: 'électrique,écologique',
       };
       req.files = [{ originalname: 'tesla.jpg', path: '/tmp/tesla.jpg' }];
 
-      const jsonContent = '{"success": true, "acceptabilityScore": 90, "info": "Tesla valide"}';
+      const jsonContent =
+        '{"success": true, "acceptabilityScore": 90, "info": "Tesla valide"}';
       mockOpenAI.chat.completions.create.mockResolvedValue({
-        choices: [{ message: { content: `Analyse: ${jsonContent}` } }]
+        choices: [{ message: { content: `Analyse: ${jsonContent}` } }],
       });
 
-      cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'http://img.com/tesla.jpg' });
-      global.fetch.mockResolvedValue({ 
-        ok: true, 
-        json: () => Promise.resolve({ id: 42, brand: 'Tesla' }) 
+      cloudinary.uploader.upload.mockResolvedValue({
+        secure_url: 'http://img.com/tesla.jpg',
+      });
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 42, brand: 'Tesla' }),
       });
 
       await validatePost(req, res);
@@ -435,7 +481,7 @@ describe('ValidationController', () => {
         username: 'user123',
         email: 'user@test.com',
         message: 'Message de test',
-        metadata: { version: 1 }
+        metadata: { version: 1 },
       };
 
       mockGPT({ success: true, info: 'Données complexes validées' });

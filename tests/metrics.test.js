@@ -4,8 +4,8 @@ const logsController = require('../controllers/metrics.controller');
 
 jest.mock('fs', () => ({
   promises: {
-    readFile: jest.fn()
-  }
+    readFile: jest.fn(),
+  },
 }));
 
 jest.mock('path');
@@ -19,14 +19,13 @@ describe('MetricsController', () => {
     req = {};
     res = {
       status: jest.fn().mockReturnThis(),
-      json: jest.fn()
+      json: jest.fn(),
     };
 
     path.join.mockImplementation((...args) => args.join('/'));
   });
 
   describe('readLogFile (fonction utilitaire)', () => {
-
     const mockLogData = `{"timestamp":"2025-01-01T10:00:00Z","level":"info","message":"Test message 1"}
 {"timestamp":"2025-01-01T10:01:00Z","level":"info","message":"Test message 2"}
 
@@ -39,9 +38,21 @@ describe('MetricsController', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([
-        {"timestamp":"2025-01-01T10:00:00Z","level":"info","message":"Test message 1"},
-        {"timestamp":"2025-01-01T10:01:00Z","level":"info","message":"Test message 2"},
-        {"timestamp":"2025-01-01T10:02:00Z","level":"info","message":"Test message 3"}
+        {
+          timestamp: '2025-01-01T10:00:00Z',
+          level: 'info',
+          message: 'Test message 1',
+        },
+        {
+          timestamp: '2025-01-01T10:01:00Z',
+          level: 'info',
+          message: 'Test message 2',
+        },
+        {
+          timestamp: '2025-01-01T10:02:00Z',
+          level: 'info',
+          message: 'Test message 3',
+        },
       ]);
     });
 
@@ -57,8 +68,8 @@ describe('MetricsController', () => {
       await logsController.getMetrics(req, res);
 
       expect(res.json).toHaveBeenCalledWith([
-        {"timestamp":"2025-01-01T10:00:00Z","level":"info","message":"Test 1"},
-        {"timestamp":"2025-01-01T10:01:00Z","level":"info","message":"Test 2"}
+        { timestamp: '2025-01-01T10:00:00Z', level: 'info', message: 'Test 1' },
+        { timestamp: '2025-01-01T10:01:00Z', level: 'info', message: 'Test 2' },
       ]);
     });
 
@@ -75,14 +86,16 @@ describe('MetricsController', () => {
       const invalidJsonData = `{"valid":"json"}
 invalid json line
 {"another":"valid"}`;
-      
+
       fs.readFile.mockResolvedValue(invalidJsonData);
 
       await logsController.getMetrics(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        message: expect.stringContaining('Erreur lors de la lecture du fichier')
+        message: expect.stringContaining(
+          'Erreur lors de la lecture du fichier'
+        ),
       });
     });
   });
@@ -100,13 +113,30 @@ invalid json line
       expect(fs.readFile).toHaveBeenCalledWith('./storage/metrics.log', 'utf8');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([
-        {"timestamp":"2025-01-01T10:00:00Z","type":"request","method":"POST","endpoint":"/api/validate","duration":150},
-        {"timestamp":"2025-01-01T10:01:00Z","type":"request","method":"GET","endpoint":"/api/metrics","duration":25},
-        {"timestamp":"2025-01-01T10:02:00Z","type":"system","cpu_usage":75.5,"memory_usage":60.2}
+        {
+          timestamp: '2025-01-01T10:00:00Z',
+          type: 'request',
+          method: 'POST',
+          endpoint: '/api/validate',
+          duration: 150,
+        },
+        {
+          timestamp: '2025-01-01T10:01:00Z',
+          type: 'request',
+          method: 'GET',
+          endpoint: '/api/metrics',
+          duration: 25,
+        },
+        {
+          timestamp: '2025-01-01T10:02:00Z',
+          type: 'system',
+          cpu_usage: 75.5,
+          memory_usage: 60.2,
+        },
       ]);
     });
 
-    it('devrait gérer l\'erreur si le fichier de métriques n\'existe pas', async () => {
+    it("devrait gérer l'erreur si le fichier de métriques n'existe pas", async () => {
       const fileError = new Error('ENOENT: no such file or directory');
       fs.readFile.mockRejectedValue(fileError);
 
@@ -114,7 +144,8 @@ invalid json line
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        message: 'Erreur lors de la lecture du fichier : ENOENT: no such file or directory'
+        message:
+          'Erreur lors de la lecture du fichier : ENOENT: no such file or directory',
       });
     });
 
@@ -126,7 +157,8 @@ invalid json line
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        message: 'Erreur lors de la lecture du fichier : EACCES: permission denied'
+        message:
+          'Erreur lors de la lecture du fichier : EACCES: permission denied',
       });
     });
 
@@ -153,13 +185,28 @@ invalid json line
       expect(fs.readFile).toHaveBeenCalledWith('./storage/errors.log', 'utf8');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([
-        {"timestamp":"2025-01-01T10:00:00Z","level":"error","message":"Database connection failed","stack":"Error: Connection timeout..."},
-        {"timestamp":"2025-01-01T10:01:00Z","level":"error","message":"OpenAI API limit exceeded","code":"rate_limit_exceeded"},
-        {"timestamp":"2025-01-01T10:02:00Z","level":"error","message":"File upload failed","details":{"filename":"test.jpg","size":2048576}}
+        {
+          timestamp: '2025-01-01T10:00:00Z',
+          level: 'error',
+          message: 'Database connection failed',
+          stack: 'Error: Connection timeout...',
+        },
+        {
+          timestamp: '2025-01-01T10:01:00Z',
+          level: 'error',
+          message: 'OpenAI API limit exceeded',
+          code: 'rate_limit_exceeded',
+        },
+        {
+          timestamp: '2025-01-01T10:02:00Z',
+          level: 'error',
+          message: 'File upload failed',
+          details: { filename: 'test.jpg', size: 2048576 },
+        },
       ]);
     });
 
-    it('devrait gérer l\'erreur si le fichier d\'erreurs n\'existe pas', async () => {
+    it("devrait gérer l'erreur si le fichier d'erreurs n'existe pas", async () => {
       const fileError = new Error('File not found');
       fs.readFile.mockRejectedValue(fileError);
 
@@ -167,7 +214,7 @@ invalid json line
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        message: 'Erreur lors de la lecture du fichier : File not found'
+        message: 'Erreur lors de la lecture du fichier : File not found',
       });
     });
 
@@ -180,7 +227,7 @@ invalid json line
       expect(fs.readFile).toHaveBeenCalledWith('./storage/errors.log', 'utf8');
     });
 
-    it('devrait retourner un tableau vide si le fichier d\'erreurs est vide', async () => {
+    it("devrait retourner un tableau vide si le fichier d'erreurs est vide", async () => {
       fs.readFile.mockResolvedValue('');
 
       await logsController.getErrors(req, res);
@@ -200,16 +247,35 @@ invalid json line
 
       await logsController.getWarnings(req, res);
 
-      expect(fs.readFile).toHaveBeenCalledWith('./storage/warnings.log', 'utf8');
+      expect(fs.readFile).toHaveBeenCalledWith(
+        './storage/warnings.log',
+        'utf8'
+      );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([
-        {"timestamp":"2025-01-01T10:00:00Z","level":"warning","message":"High memory usage detected","usage":"85%"},
-        {"timestamp":"2025-01-01T10:01:00Z","level":"warning","message":"Slow response time","endpoint":"/api/validate","duration":3500},
-        {"timestamp":"2025-01-01T10:02:00Z","level":"warning","message":"Deprecated API usage","deprecated_method":"old_validation"}
+        {
+          timestamp: '2025-01-01T10:00:00Z',
+          level: 'warning',
+          message: 'High memory usage detected',
+          usage: '85%',
+        },
+        {
+          timestamp: '2025-01-01T10:01:00Z',
+          level: 'warning',
+          message: 'Slow response time',
+          endpoint: '/api/validate',
+          duration: 3500,
+        },
+        {
+          timestamp: '2025-01-01T10:02:00Z',
+          level: 'warning',
+          message: 'Deprecated API usage',
+          deprecated_method: 'old_validation',
+        },
       ]);
     });
 
-    it('devrait gérer l\'erreur si le fichier de warnings n\'existe pas', async () => {
+    it("devrait gérer l'erreur si le fichier de warnings n'existe pas", async () => {
       const fileError = new Error('ENOENT: no such file or directory');
       fs.readFile.mockRejectedValue(fileError);
 
@@ -217,7 +283,8 @@ invalid json line
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        message: 'Erreur lors de la lecture du fichier : ENOENT: no such file or directory'
+        message:
+          'Erreur lors de la lecture du fichier : ENOENT: no such file or directory',
       });
     });
 
@@ -227,7 +294,10 @@ invalid json line
       await logsController.getWarnings(req, res);
 
       expect(path.join).toHaveBeenCalledWith('./storage', 'warnings.log');
-      expect(fs.readFile).toHaveBeenCalledWith('./storage/warnings.log', 'utf8');
+      expect(fs.readFile).toHaveBeenCalledWith(
+        './storage/warnings.log',
+        'utf8'
+      );
     });
 
     it('devrait gérer les erreurs de lecture asynchrone', async () => {
@@ -238,7 +308,7 @@ invalid json line
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        message: 'Erreur lors de la lecture du fichier : Async read error'
+        message: 'Erreur lors de la lecture du fichier : Async read error',
       });
     });
   });
@@ -247,7 +317,7 @@ invalid json line
     const testMethods = [
       { method: 'getMetrics', file: 'metrics.log' },
       { method: 'getErrors', file: 'errors.log' },
-      { method: 'getWarnings', file: 'warnings.log' }
+      { method: 'getWarnings', file: 'warnings.log' },
     ];
 
     testMethods.forEach(({ method, file }) => {
@@ -260,19 +330,22 @@ invalid json line
 
           expect(res.status).toHaveBeenCalledWith(500);
           expect(res.json).toHaveBeenCalledWith({
-            message: 'Erreur lors de la lecture du fichier : EIO: i/o error'
+            message: 'Erreur lors de la lecture du fichier : EIO: i/o error',
           });
         });
 
         it('devrait gérer les fichiers avec du JSON malformé', async () => {
-          const malformedJson = '{"valid": "json"}\n{invalid json}\n{"another": "valid"}';
+          const malformedJson =
+            '{"valid": "json"}\n{invalid json}\n{"another": "valid"}';
           fs.readFile.mockResolvedValue(malformedJson);
 
           await logsController[method](req, res);
 
           expect(res.status).toHaveBeenCalledWith(500);
           expect(res.json).toHaveBeenCalledWith({
-            message: expect.stringContaining('Erreur lors de la lecture du fichier')
+            message: expect.stringContaining(
+              'Erreur lors de la lecture du fichier'
+            ),
           });
         });
 
@@ -281,7 +354,7 @@ invalid json line
           const bigFileContent = Array(1000)
             .fill('{"timestamp":"2025-01-01T10:00:00Z","message":"test"}')
             .join('\n');
-          
+
           fs.readFile.mockResolvedValue(bigFileContent);
 
           await logsController[method](req, res);
@@ -290,9 +363,9 @@ invalid json line
           expect(res.json).toHaveBeenCalledWith(
             expect.arrayContaining([
               expect.objectContaining({
-                timestamp: "2025-01-01T10:00:00Z",
-                message: "test"
-              })
+                timestamp: '2025-01-01T10:00:00Z',
+                message: 'test',
+              }),
             ])
           );
           // Vérifier que le tableau contient bien 1000 éléments
@@ -315,15 +388,12 @@ invalid json line
       expect(path.join).toHaveBeenCalledWith('./storage', 'warnings.log');
     });
 
-    it('devrait utiliser l\'encodage UTF-8 pour la lecture des fichiers', async () => {
+    it("devrait utiliser l'encodage UTF-8 pour la lecture des fichiers", async () => {
       fs.readFile.mockResolvedValue('{}');
 
       await logsController.getMetrics(req, res);
 
-      expect(fs.readFile).toHaveBeenCalledWith(
-        expect.any(String),
-        'utf8'
-      );
+      expect(fs.readFile).toHaveBeenCalledWith(expect.any(String), 'utf8');
     });
   });
 
@@ -346,21 +416,22 @@ invalid json line
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([
-        {"test": "value1"},
-        {"test": "value2"},
-        {"test": "value3"}
+        { test: 'value1' },
+        { test: 'value2' },
+        { test: 'value3' },
       ]);
     });
 
     it('devrait gérer les caractères Unicode', async () => {
-      const unicodeContent = '{"message": "Erreur détectée: problème d\'accès àçèé", "emoji": "🚨"}';
+      const unicodeContent =
+        '{"message": "Erreur détectée: problème d\'accès àçèé", "emoji": "🚨"}';
       fs.readFile.mockResolvedValue(unicodeContent);
 
       await logsController.getMetrics(req, res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([
-        {"message": "Erreur détectée: problème d'accès àçèé", "emoji": "🚨"}
+        { message: "Erreur détectée: problème d'accès àçèé", emoji: '🚨' },
       ]);
     });
   });
