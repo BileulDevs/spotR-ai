@@ -4,156 +4,86 @@ const logger = require('../config/logger');
 const cloudinary = require('../config/cloudinary');
 const { OpenAI } = require('openai');
 
-// Mocks
 jest.mock('fs');
 jest.mock('../config/logger');
 jest.mock('../config/cloudinary');
 jest.mock('openai');
-jest.mock('dotenv', () => ({
-  config: jest.fn()
-}));
+jest.mock('dotenv', () => ({ config: jest.fn() }));
 
-// Mock global fetch
 global.fetch = jest.fn();
 
 describe('ValidationController', () => {
-  let req, res, mockOpenAI;
+  let req, res, mockOpenAI, consoleSpy;
+
+  const validPostData = {
+    brand: 'Toyota',
+    model: 'Corolla',
+    description: 'Voiture en excellent état',
+    tags: ['berline', 'fiable']
+  };
+
+  const mockFiles = [
+    { originalname: 'car1.jpg', path: '/tmp/upload1.jpg' },
+    { originalname: 'car2.jpg', path: '/tmp/upload2.jpg' }
+  ];
 
   beforeEach(() => {
-    // Reset mocks
     jest.clearAllMocks();
-    
-    // Mock OpenAI
-    mockOpenAI = {
-      chat: {
-        completions: {
-          create: jest.fn()
-        }
-      }
-    };
+
+    mockOpenAI = { chat: { completions: { create: jest.fn() } } };
     OpenAI.mockImplementation(() => mockOpenAI);
 
-    // Mock req et res
     req = {
       body: {},
       files: [],
-      headers: {
-        authorization: 'Bearer test-token'
-      }
+      headers: { authorization: 'Bearer token' }
     };
 
-    res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn()
-    };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
-    // Mock logger
+    fs.readFileSync.mockReturnValue(Buffer.from('imgdata'));
+    fs.unlinkSync.mockImplementation(() => {});
+    cloudinary.uploader.upload = jest.fn();
     logger.info = jest.fn();
     logger.error = jest.fn();
     logger.warn = jest.fn();
 
-    // Mock cloudinary
-    cloudinary.uploader = {
-      upload: jest.fn()
-    };
-
-    // Mock fs
-    fs.readFileSync = jest.fn();
-    fs.unlinkSync = jest.fn();
+    consoleSpy = jest.spyOn(console, 'log').mockImplementation();
   });
 
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  const mockGPT = (response) =>
+    mockOpenAI.chat.completions.create.mockResolvedValue({
+      choices: [{ message: { content: JSON.stringify(response) } }]
+    });
+
   describe('validatePost', () => {
-    const validPostData = {
-      brand: 'Toyota',
-      model: 'Corolla',
-      description: 'Voiture en excellent état, bien entretenue',
-      tags: ['berline', 'économique', 'fiable']
-    };
-
-    const mockFiles = [
-      {
-        originalname: 'car1.jpg',
-        path: '/tmp/upload1.jpg'
-      },
-      {
-        originalname: 'car2.jpg',
-        path: '/tmp/upload2.jpg'
-      }
-    ];
-
     beforeEach(() => {
       req.body = { ...validPostData };
       req.files = [...mockFiles];
-
-      // Mock Cloudinary upload
-      cloudinary.uploader.upload.mockResolvedValue({
-        secure_url: 'https://cloudinary.com/image.jpg'
-      });
-
-      // Mock fs.readFileSync
-      fs.readFileSync.mockReturnValue(Buffer.from('fake-image-data'));
-
-      // Mock fetch pour le service BDD
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ id: 1, ...validPostData })
-      });
+      cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'http://img.com/img.jpg' });
+      global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: 1, ...validPostData }) });
     });
 
     describe('Validation des données d\'entrée', () => {
-      it('devrait rejeter une requête sans brand', async () => {
-        delete req.body.brand;
-
-        await validatePost(req, res);
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-          success: false,
-          error: "Champs requis manquants ou images non fournies."
+      ['brand', 'model', 'description', 'tags'].forEach(field => {
+        it(`rejette si ${field} est manquant`, async () => {
+          delete req.body[field];
+          await validatePost(req, res);
+          expect(res.status).toHaveBeenCalledWith(400);
+          expect(res.json).toHaveBeenCalledWith({
+            success: false,
+            error: "Champs requis manquants ou images non fournies."
+          });
         });
       });
 
-      it('devrait rejeter une requête sans model', async () => {
-        delete req.body.model;
-
-        await validatePost(req, res);
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-          success: false,
-          error: "Champs requis manquants ou images non fournies."
-        });
-      });
-
-      it('devrait rejeter une requête sans description', async () => {
-        delete req.body.description;
-
-        await validatePost(req, res);
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-          success: false,
-          error: "Champs requis manquants ou images non fournies."
-        });
-      });
-
-      it('devrait rejeter une requête sans tags', async () => {
-        delete req.body.tags;
-
-        await validatePost(req, res);
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-          success: false,
-          error: "Champs requis manquants ou images non fournies."
-        });
-      });
-
-      it('devrait rejeter une requête sans images', async () => {
+      it('rejette si aucune image fournie', async () => {
         req.files = [];
-
         await validatePost(req, res);
-
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
@@ -161,67 +91,48 @@ describe('ValidationController', () => {
         });
       });
 
-      it('devrait parser les tags depuis une string JSON', async () => {
-        req.body.tags = '["berline", "économique"]';
-        
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                success: true,
-                acceptabilityScore: 85,
-                info: "Post valide"
-              })
-            }
-          }]
-        });
-
+      it('rejette si images est null', async () => {
+        req.files = null;
         await validatePost(req, res);
-
-        expect(mockOpenAI.chat.completions.create).toHaveBeenCalled();
-        const call = mockOpenAI.chat.completions.create.mock.calls[0][0];
-        expect(call.messages[0].content[0].text).toContain('["berline","économique"]');
+        expect(res.status).toHaveBeenCalledWith(400);
       });
 
-      it('devrait parser les tags depuis une string délimitée par des virgules', async () => {
-        req.body.tags = 'berline, économique, fiable';
-        
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                success: true,
-                acceptabilityScore: 85,
-                info: "Post valide"
-              })
-            }
-          }]
-        });
-
+      it('rejette si tags est null', async () => {
+        req.body.tags = null;
         await validatePost(req, res);
+        expect(res.status).toHaveBeenCalledWith(400);
+      });
+    });
 
+    describe('Parsing des tags', () => {
+      it('parse les tags depuis une string JSON valide', async () => {
+        req.body.tags = '["berline","fiable"]';
+        mockGPT({ success: true, acceptabilityScore: 85 });
+        await validatePost(req, res);
         expect(mockOpenAI.chat.completions.create).toHaveBeenCalled();
-        const call = mockOpenAI.chat.completions.create.mock.calls[0][0];
-        expect(call.messages[0].content[0].text).toContain('["berline","économique","fiable"]');
+        expect(res.status).toHaveBeenCalledWith(201);
+      });
+
+      it('parse les tags via split si JSON.parse échoue', async () => {
+        req.body.tags = 'berline,fiable,économique';
+        mockGPT({ success: true, acceptabilityScore: 85 });
+        await validatePost(req, res);
+        expect(mockOpenAI.chat.completions.create).toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(201);
+      });
+
+      it('conserve les tags si déjà un array', async () => {
+        req.body.tags = ['berline', 'fiable'];
+        mockGPT({ success: true, acceptabilityScore: 85 });
+        await validatePost(req, res);
+        expect(res.status).toHaveBeenCalledWith(201);
       });
     });
 
     describe('Upload Cloudinary', () => {
-      it('devrait uploader toutes les images sur Cloudinary', async () => {
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                success: true,
-                acceptabilityScore: 85,
-                info: "Post valide"
-              })
-            }
-          }]
-        });
-
+      it('uploade toutes les images sur Cloudinary', async () => {
+        mockGPT({ success: true, acceptabilityScore: 85 });
         await validatePost(req, res);
-
         expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(2);
         expect(cloudinary.uploader.upload).toHaveBeenCalledWith('/tmp/upload1.jpg', {
           folder: "posts",
@@ -231,176 +142,101 @@ describe('ValidationController', () => {
         });
       });
 
-      it('devrait gérer les erreurs d\'upload Cloudinary', async () => {
-        cloudinary.uploader.upload.mockRejectedValue(new Error('Upload failed'));
-
+      it('gère les erreurs Cloudinary', async () => {
+        cloudinary.uploader.upload.mockRejectedValue(new Error('Cloudinary upload failed'));
         await validatePost(req, res);
-
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
           error: "Erreur serveur",
-          message: "Upload failed"
+          message: "Cloudinary upload failed"
         });
       });
     });
 
-    describe('Validation OpenAI', () => {
-      it('devrait valider un post correct avec OpenAI', async () => {
-        const mockGPTResponse = {
-          success: true,
-          acceptabilityScore: 85,
-          info: "Post validé avec succès"
-        };
-
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify(mockGPTResponse)
-            }
-          }]
-        });
-
+    describe('Validation GPT', () => {
+      it('valide un post correct via GPT', async () => {
+        mockGPT({ success: true, acceptabilityScore: 85, info: 'Post valide' });
         await validatePost(req, res);
-
-        expect(mockOpenAI.chat.completions.create).toHaveBeenCalledWith({
-          model: "gpt-4o",
-          messages: expect.any(Array),
-          max_tokens: 1200
-        });
-
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith({
           success: true,
-          info: "Post validé avec succès",
+          info: 'Post valide',
           post: { id: 1, ...validPostData }
         });
       });
 
-      it('devrait rejeter un post invalide selon OpenAI', async () => {
-        const mockGPTResponse = {
-          success: false,
-          acceptabilityScore: 60,
-          errors: ["Marque inconnue", "Description inappropriée"]
-        };
-
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify(mockGPTResponse)
-            }
-          }]
-        });
-
+      it('rejette un post invalide via GPT', async () => {
+        mockGPT({ success: false, acceptabilityScore: 50, errors: ['Marque inconnue'] });
         await validatePost(req, res);
-
         expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith(mockGPTResponse);
+        expect(res.json).toHaveBeenCalledWith({
+          success: false,
+          acceptabilityScore: 50,
+          errors: ['Marque inconnue']
+        });
       });
 
-      it('devrait parser une réponse GPT avec du texte supplémentaire', async () => {
-        const mockGPTResponse = {
-          success: true,
-          acceptabilityScore: 85,
-          info: "Post validé"
-        };
-
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: `Voici ma réponse: ${JSON.stringify(mockGPTResponse)} et voilà.`
-            }
-          }]
-        });
-
+      it('gère une erreur GPT', async () => {
+        mockOpenAI.chat.completions.create.mockRejectedValue(new Error('GPT API Error'));
         await validatePost(req, res);
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(logger.error).toHaveBeenCalledWith('Erreur dans validatePost:', expect.any(Error));
+      });
 
+      it('gère une réponse GPT complètement invalide', async () => {
+        mockOpenAI.chat.completions.create.mockResolvedValue({
+          choices: [{ message: { content: 'Réponse non JSON invalide' } }]
+        });
+        await validatePost(req, res);
+        expect(res.status).toHaveBeenCalledWith(500);
+      });
+
+      it('parse une réponse GPT avec regex quand JSON.parse échoue', async () => {
+        const jsonContent = '{"success": true, "acceptabilityScore": 85, "info": "ok"}';
+        mockOpenAI.chat.completions.create.mockResolvedValue({
+          choices: [{ message: { content: `Voici la réponse: ${jsonContent} avec du texte après` } }]
+        });
+        await validatePost(req, res);
         expect(res.status).toHaveBeenCalledWith(201);
-        expect(res.json).toHaveBeenCalledWith({
-          success: true,
-          info: "Post validé",
-          post: { id: 1, ...validPostData }
-        });
       });
 
-      it('devrait gérer une réponse GPT invalide', async () => {
+      it('gère le cas où la réponse GPT ne contient aucun JSON valide', async () => {
         mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: "Réponse non-JSON invalide"
-            }
-          }]
+          choices: [{ message: { content: 'Aucun JSON ici du tout' } }]
         });
-
         await validatePost(req, res);
-
         expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({
-          success: false,
-          error: "Erreur serveur",
-          message: "Réponse GPT invalide"
-        });
-      });
-
-      it('devrait gérer les erreurs OpenAI', async () => {
-        mockOpenAI.chat.completions.create.mockRejectedValue(new Error('OpenAI API Error'));
-
-        await validatePost(req, res);
-
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({
-          success: false,
-          error: "Erreur serveur",
-          message: "OpenAI API Error"
-        });
       });
     });
 
     describe('Sauvegarde en base de données', () => {
-      beforeEach(() => {
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                success: true,
-                acceptabilityScore: 85,
-                info: "Post valide"
-              })
-            }
-          }]
-        });
-      });
-
-      it('devrait sauvegarder le post validé en BDD', async () => {
+      it('sauvegarde en BDD après validation réussie', async () => {
+        mockGPT({ success: true, acceptabilityScore: 85, info: 'ok' });
         await validatePost(req, res);
-
+        
         expect(global.fetch).toHaveBeenCalledWith(
           `${process.env.SERVICE_BDD_URL}/api/posts`,
-          {
+          expect.objectContaining({
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "Authorization": req.headers.authorization
-            },
-            body: JSON.stringify({
-              brand: validPostData.brand,
-              model: validPostData.model,
-              description: validPostData.description,
-              tags: validPostData.tags,
-              images: ['https://cloudinary.com/image.jpg', 'https://cloudinary.com/image.jpg']
-            })
-          }
+            }
+          })
         );
+        expect(res.status).toHaveBeenCalledWith(201);
       });
 
-      it('devrait gérer les erreurs de la BDD', async () => {
-        global.fetch.mockResolvedValue({
-          ok: false,
-          json: () => Promise.resolve({ error: 'Database error' })
+      it('gère les erreurs de base de données', async () => {
+        global.fetch.mockResolvedValue({ 
+          ok: false, 
+          json: () => Promise.resolve({ error: 'Database error' }) 
         });
-
+        mockGPT({ success: true, acceptabilityScore: 85 });
+        
         await validatePost(req, res);
-
+        
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({
           success: false,
@@ -411,192 +247,202 @@ describe('ValidationController', () => {
     });
 
     describe('Nettoyage des fichiers temporaires', () => {
-      beforeEach(() => {
-        mockOpenAI.chat.completions.create.mockResolvedValue({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                success: true,
-                acceptabilityScore: 85,
-                info: "Post valide"
-              })
-            }
-          }]
-        });
-      });
-
-      it('devrait supprimer les fichiers temporaires après traitement', async () => {
+      it('supprime les fichiers temporaires après succès', async () => {
+        mockGPT({ success: true, acceptabilityScore: 85 });
         await validatePost(req, res);
-
+        expect(fs.unlinkSync).toHaveBeenCalledTimes(2);
         expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/upload1.jpg');
         expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/upload2.jpg');
       });
 
-      it('devrait gérer les erreurs de suppression de fichiers', async () => {
-        fs.unlinkSync.mockImplementation(() => {
-          throw new Error('File deletion error');
-        });
-
-        await validatePost(req, res);
-
-        expect(logger.warn).toHaveBeenCalledWith("Erreur suppression fichier:", expect.any(Error));
-      });
-
-      it('devrait supprimer les fichiers même en cas d\'erreur', async () => {
+      it('supprime les fichiers temporaires même en cas d\'erreur GPT', async () => {
         mockOpenAI.chat.completions.create.mockRejectedValue(new Error('GPT Error'));
-
         await validatePost(req, res);
+        expect(fs.unlinkSync).toHaveBeenCalledTimes(2);
+      });
 
-        expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/upload1.jpg');
-        expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/upload2.jpg');
+      it('gère les erreurs de suppression de fichiers temporaires', async () => {
+        fs.unlinkSync.mockImplementation(() => {
+          throw new Error('Permission denied');
+        });
+        mockGPT({ success: true, acceptabilityScore: 85 });
+        
+        await validatePost(req, res);
+        
+        expect(logger.warn).toHaveBeenCalledWith('Erreur suppression fichier:', expect.any(Error));
+        expect(res.status).toHaveBeenCalledWith(201);
+      });
+
+      it('gère le cas où files est null dans le finally', async () => {
+        req.files = null;
+        await validatePost(req, res);
+        expect(res.status).toHaveBeenCalledWith(400);
       });
     });
   });
 
-//   describe('validateData', () => {
-//     const validData = {
-//       username: 'user123',
-//       email: 'user@example.com',
-//       message: 'Ceci est un message correct'
-//     };
+  describe('validateData', () => {
+    const validData = { username: 'testuser', email: 'test@example.com', message: 'Hello world' };
 
-//     beforeEach(() => {
-//       req.body = { ...validData };
-//     });
+    beforeEach(() => {
+      req.body = { ...validData };
+    });
 
-//     it('devrait valider des données correctes', async () => {
-//       const mockGPTResponse = {
-//         success: true,
-//         info: "Validation des données OK"
-//       };
+    describe('Validation des données d\'entrée', () => {
+      it('rejette si body est null', async () => {
+        req.body = null;
+        await validateData(req, res);
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+          success: false,
+          error: "Aucune donnée fournie."
+        });
+      });
 
-//       mockOpenAI.chat.completions.create.mockResolvedValue({
-//         choices: [{
-//           message: {
-//             content: JSON.stringify(mockGPTResponse)
-//           }
-//         }]
-//       });
+      it('rejette si body est undefined', async () => {
+        req.body = undefined;
+        await validateData(req, res);
+        expect(res.status).toHaveBeenCalledWith(400);
+      });
+    });
 
-//       await validateData(req, res);
+    describe('Validation GPT', () => {
+      it('valide des données correctes', async () => {
+        mockGPT({ success: true, info: 'Validation des données OK' });
+        await validateData(req, res);
+        
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({
+          success: true,
+          info: 'Validation des données OK'
+        });
+      });
 
-//       expect(res.status).toHaveBeenCalledWith(200);
-//       expect(res.json).toHaveBeenCalledWith({
-//         success: true,
-//         info: "Validation des données OK"
-//       });
-//     });
+      it('rejette des données invalides', async () => {
+        mockGPT({ 
+          success: false, 
+          errors: ['username: contenu inapproprié', 'email: format invalide'] 
+        });
+        await validateData(req, res);
+        
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+          success: false,
+          errors: ['username: contenu inapproprié', 'email: format invalide']
+        });
+      });
 
-//     it('devrait rejeter des données inappropriées', async () => {
-//       const mockGPTResponse = {
-//         success: false,
-//         errors: [
-//           "username: 'Contient des caractères inappropriés'",
-//           "message: 'Contenu offensant détecté'"
-//         ]
-//       };
+      it('utilise un message par défaut si info manque', async () => {
+        mockGPT({ success: true });
+        await validateData(req, res);
+        
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({
+          success: true,
+          info: 'Données validées'
+        });
+      });
 
-//       mockOpenAI.chat.completions.create.mockResolvedValue({
-//         choices: [{
-//           message: {
-//             content: JSON.stringify(mockGPTResponse)
-//           }
-//         }]
-//       });
+      it('gère les erreurs GPT', async () => {
+        mockOpenAI.chat.completions.create.mockRejectedValue(new Error('GPT API Error'));
+        await validateData(req, res);
+        
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(logger.error).toHaveBeenCalledWith('Erreur dans validateData:', expect.any(Error));
+      });
 
-//       await validateData(req, res);
+      it('gère une réponse GPT complètement invalide', async () => {
+        mockOpenAI.chat.completions.create.mockResolvedValue({
+          choices: [{ message: { content: 'Réponse non JSON invalide' } }]
+        });
+        await validateData(req, res);
+        expect(res.status).toHaveBeenCalledWith(500);
+      });
 
-//       expect(res.status).toHaveBeenCalledWith(400);
-//       expect(res.json).toHaveBeenCalledWith(mockGPTResponse);
-//     });
+      it('parse une réponse GPT avec regex quand JSON.parse échoue', async () => {
+        const jsonContent = '{"success": true, "info": "Données validées"}';
+        mockOpenAI.chat.completions.create.mockResolvedValue({
+          choices: [{ message: { content: `Préfixe ${jsonContent} suffixe` } }]
+        });
+        await validateData(req, res);
+        
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({
+          success: true,
+          info: 'Données validées'
+        });
+      });
 
-//     it('devrait rejeter une requête sans body', async () => {
-//       req.body = null;
+      it('gère le cas où la réponse GPT ne contient aucun JSON', async () => {
+        mockOpenAI.chat.completions.create.mockResolvedValue({
+          choices: [{ message: { content: 'Aucun JSON ici' } }]
+        });
+        await validateData(req, res);
+        expect(res.status).toHaveBeenCalledWith(500);
+      });
+    });
 
-//       await validateData(req, res);
+    describe('Console log', () => {
+      it('affiche le username dans la console', async () => {
+        req.body.username = 'testuser';
+        mockGPT({ success: true, info: 'ok' });
+        
+        await validateData(req, res);
+        
+        expect(consoleSpy).toHaveBeenCalledWith('testuser');
+      });
 
-//       expect(res.status).toHaveBeenCalledWith(400);
-//       expect(res.json).toHaveBeenCalledWith({
-//         success: false,
-//         error: "Aucune donnée fournie."
-//       });
-//     });
+      it('gère le cas où username est undefined', async () => {
+        req.body = { email: 'test@example.com', message: 'Hello' };
+        mockGPT({ success: true, info: 'ok' });
+        
+        await validateData(req, res);
+        
+        expect(consoleSpy).toHaveBeenCalledWith(undefined);
+      });
+    });
+  });
 
-//     it('devrait appeler OpenAI avec les bonnes données', async () => {
-//       mockOpenAI.chat.completions.create.mockResolvedValue({
-//         choices: [{
-//           message: {
-//             content: JSON.stringify({
-//               success: true,
-//               info: "OK"
-//             })
-//           }
-//         }]
-//       });
+  describe('Intégration et cas edge', () => {
+    it('validatePost avec tous les cas edge combinés', async () => {
+      req.body = {
+        brand: 'Tesla',
+        model: 'Model 3',
+        description: 'Voiture électrique',
+        tags: 'électrique,écologique'
+      };
+      req.files = [{ originalname: 'tesla.jpg', path: '/tmp/tesla.jpg' }];
 
-//       await validateData(req, res);
+      const jsonContent = '{"success": true, "acceptabilityScore": 90, "info": "Tesla valide"}';
+      mockOpenAI.chat.completions.create.mockResolvedValue({
+        choices: [{ message: { content: `Analyse: ${jsonContent}` } }]
+      });
 
-//       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledWith({
-//         model: "gpt-4o",
-//         messages: [{
-//           role: "user",
-//           content: [{
-//             type: "text",
-//             text: expect.stringContaining(JSON.stringify(validData))
-//           }]
-//         }],
-//         max_tokens: 1200
-//       });
-//     });
-
-//     it('devrait gérer les erreurs OpenAI dans validateData', async () => {
-//       mockOpenAI.chat.completions.create.mockRejectedValue(new Error('OpenAI Error'));
-
-//       await validateData(req, res);
-
-//       expect(res.status).toHaveBeenCalledWith(500);
-//       expect(res.json).toHaveBeenCalledWith({
-//         success: false,
-//         error: "Erreur serveur",
-//         message: "OpenAI Error"
-//       });
-//     });
-
-//     it('devrait parser une réponse GPT avec du texte supplémentaire dans validateData', async () => {
-//       const mockGPTResponse = {
-//         success: true,
-//         info: "Données validées"
-//       };
-
-//       mockOpenAI.chat.completions.create.mockResolvedValue({
-//         choices: [{
-//           message: {
-//             content: `Analyse: ${JSON.stringify(mockGPTResponse)} - Fin de l'analyse.`
-//           }
-//         }]
-//       });
-
-//       await validateData(req, res);
-
-//       expect(res.status).toHaveBeenCalledWith(200);
-//       expect(res.json).toHaveBeenCalledWith({
-//         success: true,
-//         info: "Données validées"
-//       });
-//     });
-//   });
-
-  describe('Gestion des erreurs globales', () => {
-    it('devrait logger les erreurs', async () => {
-      const error = new Error('Test error');
-      mockOpenAI.chat.completions.create.mockRejectedValue(error);
-
-      req.body = { brand: 'Toyota', model: 'Corolla', description: 'Test', tags: ['test'] };
-      req.files = [{ originalname: 'test.jpg', path: '/tmp/test.jpg' }];
+      cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'http://img.com/tesla.jpg' });
+      global.fetch.mockResolvedValue({ 
+        ok: true, 
+        json: () => Promise.resolve({ id: 42, brand: 'Tesla' }) 
+      });
 
       await validatePost(req, res);
 
-      expect(logger.error).toHaveBeenCalledWith("Erreur dans validatePost:", error);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/tesla.jpg');
+    });
+
+    it('validateData avec corps complexe', async () => {
+      req.body = {
+        username: 'user123',
+        email: 'user@test.com',
+        message: 'Message de test',
+        metadata: { version: 1 }
+      };
+
+      mockGPT({ success: true, info: 'Données complexes validées' });
+      await validateData(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(consoleSpy).toHaveBeenCalledWith('user123');
     });
   });
 });

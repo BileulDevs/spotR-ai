@@ -36,11 +36,10 @@ exports.validatePost = async (req, res) => {
       return {
         name: file.originalname,
         url: result.secure_url,
-        base64: fs.readFileSync(file.path).toString("base64") // pour GPT
+        base64: fs.readFileSync(file.path).toString("base64")
       };
     }));
 
-    // Construction du prompt pour OpenAI
 const prompt = `
 Tu es un assistant expert en automobile et en détection de contenu inapproprié.
 Tu dois évaluer la fiabilité d'une annonce de voiture d'occasion selon les critères suivants :
@@ -163,7 +162,6 @@ Sois rigoureux mais tolérant : si tu n’es pas certain à 100% mais que l’en
       message: err.message
     });
   } finally {
-    // Nettoyage fichiers temporaires
     if (images) {
       for (const file of images) {
         try {
@@ -178,8 +176,6 @@ Sois rigoureux mais tolérant : si tu n’es pas certain à 100% mais que l’en
 
 exports.validateData = async (req, res) => {
   let body = req.body;
-
-  console.log(body.username)
 
   if (!body) {
     return res.status(400).json({ success: false, error: "Aucune donnée fournie." });
