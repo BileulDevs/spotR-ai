@@ -2,37 +2,30 @@ const fs = require('fs').promises;
 const path = require('path');
 const logsController = require('../controllers/metrics.controller');
 
-// Mock fs.promises
 jest.mock('fs', () => ({
   promises: {
     readFile: jest.fn()
   }
 }));
 
-// Mock path (optionnel car path.join fonctionne normalement)
 jest.mock('path');
 
 describe('MetricsController', () => {
   let req, res;
 
   beforeEach(() => {
-    // Reset mocks
     jest.clearAllMocks();
 
-    // Mock req et res
     req = {};
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn()
     };
 
-    // Mock path.join pour retourner des chemins prévisibles
     path.join.mockImplementation((...args) => args.join('/'));
   });
 
   describe('readLogFile (fonction utilitaire)', () => {
-    // On teste indirectement readLogFile à travers les méthodes du controller
-    // car elle n'est pas exportée directement
 
     const mockLogData = `{"timestamp":"2025-01-01T10:00:00Z","level":"info","message":"Test message 1"}
 {"timestamp":"2025-01-01T10:01:00Z","level":"info","message":"Test message 2"}
